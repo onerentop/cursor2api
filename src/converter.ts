@@ -62,11 +62,13 @@ function buildToolInstructions(tools: AnthropicTool[], hasCommunicationTool: boo
 
     const rules = hasCommunicationTool
         ? `CRITICAL RULES:
-1. You MUST provide at least one \`\`\`json action ... \`\`\` block in every response. You can provide multiple blocks to execute actions in parallel.
-2. If you are waiting for me to give you a task, or you want to ask me a question, DO NOT run meaningless terminal commands. Instead, use the appropriate communication tool (e.g. attempt_completion, ask_followup_question).`
+1. You MUST provide at least one \`\`\`json action ... \`\`\` block in every response.
+2. To execute tools in parallel, output MULTIPLE \`\`\`json action ... \`\`\` blocks ONE AFTER ANOTHER IN THE SAME RESPONSE. Do NOT wait for my reply between blocks.
+3. If you are waiting for me to give you a task, or you want to ask me a question, DO NOT run meaningless terminal commands. Instead, use the appropriate communication tool (e.g. attempt_completion, ask_followup_question).`
         : `CRITICAL RULES:
-1. If you need to perform actions, you can provide one or multiple \`\`\`json action ... \`\`\` blocks to execute them in parallel.
-2. If you have finished your task, are waiting for me to give you a task, or just want to reply/ask a question, DO NOT output any JSON action block! Just reply with normal text. DO NOT run meaningless terminal commands (like "echo ready").`;
+1. If you need to perform actions, provide \`\`\`json action ... \`\`\` blocks.
+2. To execute tools in parallel, output MULTIPLE \`\`\`json action ... \`\`\` blocks ONE AFTER ANOTHER IN THE SAME RESPONSE. Do NOT wait for my reply between blocks. This is how you achieve parallelism!
+3. If you have finished your task, are waiting for me to give you a task, or just want to reply/ask a question, DO NOT output any JSON action block! Just reply with normal text. DO NOT run meaningless terminal commands (like "echo ready").`;
 
     return `Hi! I need your help. For every step we take, please provide the action I should run formatted as a simple JSON block.
 
@@ -134,7 +136,7 @@ export function convertToCursorRequest(req: AnthropicRequest): CursorChatRequest
             role: 'user',
         });
         messages.push({
-            parts: [{ type: 'text', text: 'Ready! Please provide the request, and I will output the corresponding JSON action block.' }],
+            parts: [{ type: 'text', text: 'Ready! Please provide the request, and I will output the corresponding JSON action block. If I need to execute tools in parallel, I will output multiple JSON action blocks in the same response.' }],
             id: shortId(),
             role: 'assistant',
         });
