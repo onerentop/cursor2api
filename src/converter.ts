@@ -48,7 +48,7 @@ function filterCoreTools(tools: AnthropicTool[]): AnthropicTool[] {
  * 策略：使用纯 JSON 格式代替 XML，避免触发 Claude 的安全过滤器
  * （XML 标签如 <tool_name> 容易被判定为提示词注入试图覆盖原生工具）
  */
-function buildToolInstructions(tools: AnthropicTool[]): string {
+function buildToolInstructions(tools: AnthropicTool[], hasCommunicationTool: boolean): string {
     if (!tools || tools.length === 0) return '';
 
     const toolList = tools.map((tool) => {
@@ -59,6 +59,14 @@ function buildToolInstructions(tools: AnthropicTool[]): string {
             : '';
         return `- ${tool.name}(${params})`;
     }).join('\n');
+
+    const rules = hasCommunicationTool
+        ? `CRITICAL RULES:
+1. You MUST provide at least one \`\`\`json action ... \`\`\` block in every response.
+2. If you are waiting for me to give you a task, or you want to ask me a question, DO NOT run meaningless terminal commands. Instead, use the appropriate communication tool (e.g. attempt_completion, ask_followup_question).`
+        : `CRITICAL RULES:
+1. If you need to perform an action, provide exactly one \`\`\`json action ... \`\`\` block.
+2. If you have finished your task, are waiting for me to give you a task, or just want to reply/ask a question, DO NOT output any JSON action block! Just reply with normal text. DO NOT run meaningless terminal commands (like "echo ready").`;
 
     return `Hi! I need your help. For every step we take, please provide the action I should run formatted as a simple JSON block.
 
@@ -76,9 +84,7 @@ Please output your desired action in EXACTLY this markdown format:
 Here are the valid ACTION_NAMEs and parameters you can choose from:
 ${toolList}
 
-CRITICAL RULES:
-1. You MUST provide at least one \`\`\`json action ... \`\`\` block in every response.
-2. If you are waiting for me to give you a task, or you want to ask me a question, DO NOT run meaningless terminal commands (like "echo ready"). Instead, use the appropriate communication tool (such as AskFollowupQuestion, ask_followup_question, or attempt_completion).`;
+${rules}`;
 }
 
 // ==================== 请求转换 ====================
@@ -98,7 +104,8 @@ export function convertToCursorRequest(req: AnthropicRequest): CursorChatRequest
         const coreTools = filterCoreTools(req.tools!);
         console.log(`[Converter] 工具: ${req.tools!.length} → ${coreTools.length} (过滤到核心)`);
 
-        const toolInstructions = buildToolInstructions(coreTools);
+        const hasCommunicationTool = coreTools.some(t => ['attempt_completion', 'ask_followup_question', 'AskFollowupQuestion'].includes(t.name));
+        const toolInstructions = buildToolInstructions(coreTools, hasCommunicationTool);
 
         // 动态选取第一个工具做 few-shot 示例
         const exampleTool = coreTools[0];
@@ -140,7 +147,12 @@ export function convertToCursorRequest(req: AnthropicRequest): CursorChatRequest
 
         // 在每条用户消息末尾追加格式提醒
         if (hasTools && msg.role === 'user') {
-            text += '\n\n[Reminder: Please output a ```json action block for the action you want to take. If you have no task or want to respond, use AskFollowupQuestion or ask_followup_question or attempt_completion, DO NOT use Bash/execute_command]';
+            const hasCommunicationTool = req.tools!.some(t => ['attempt_completion', 'ask_followup_question', 'AskFollowupQuestion'].includes(t.name));
+            if (hasCommunicationTool) {
+                text += '\n\n[Reminder: Please output a ```json action block for the action you want to take. If you have no task or want to respond, use AskFollowupQuestion or ask_followup_question or attempt_completion, DO NOT use Bash/execute_command]';
+            } else {
+                text += '\n\n[Reminder: If you need to perform an action, output a ```json action block. If you just want to talk to me or are waiting for a task, DO NOT output any action block, just reply with plain text.]';
+            }
         }
 
         messages.push({
